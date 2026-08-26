@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>tab-clamp</title>
+    <link rel="stylesheet" href="ui.css" />
+    <style>
+      body { width: 380px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="dot"></div>
+      <h1>tab-clamp</h1>
+      <span class="muted" id="headline" style="margin-left: auto"></span>
+    </header>
+
+    <!-- Setup: no session running -->
+    <main id="setup" class="hidden">
+      <section>
+        <label class="field" for="tab-list">Tabs to clamp</label>
+        <div class="tab-list" id="tab-list"></div>
+        <p class="muted" style="margin: 6px 0 0">
+          URL lock pins a tab to its exact page. Off, the tab may roam within
+          its site.
+        </p>
+      </section>
+
+      <section>
+        <label class="field">Duration</label>
+        <div class="presets" id="presets">
+          <button class="preset" data-minutes="15">15m</button>
+          <button class="preset active" data-minutes="25">25m</button>
+          <button class="preset" data-minutes="45">45m</button>
+          <button class="preset" data-minutes="60">1h</button>
+          <button class="preset" data-minutes="90">1h30</button>
+        </div>
+        <input
+          type="number"
+          id="minutes"
+          min="1"
+          max="600"
+          value="25"
+          style="margin-top: 8px"
+          aria-label="Minutes"
+        />
+      </section>
+
+      <section>
+        <label class="field">Strictness</label>
+        <div class="toggles" id="toggles">
+          <div class="toggle-row">
+            <span>Reopen tabs I close</span>
+            <label class="switch">
+              <input type="checkbox" data-setting="reopenClosedTabs" />
+              <span class="track"></span>
+            </label>
+          </div>
+          <div class="toggle-row">
+            <span>Block new tabs</span>
+            <label class="switch">
+              <input type="checkbox" data-setting="blockNewTabs" />
+              <span class="track"></span>
+            </label>
+          </div>
+          <div class="toggle-row">
+            <span>Pull focus back</span>
+            <label class="switch">
+              <input type="checkbox" data-setting="keepFocus" />
+              <span class="track"></span>
+            </label>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <p class="error" id="setup-error"></p>
+        <button class="primary" id="start">Clamp</button>
+      </section>
+    </main>
+
+    <!-- Active: session running -->
+    <main id="active" class="hidden">
+      <section style="text-align: center">
+        <div class="countdown" id="countdown">--:--</div>
+        <p class="muted" id="active-sub"></p>
+      </section>
+
+      <section>
+        <label class="field">Clamped tabs</label>
+        <div class="tab-list" id="active-tabs"></div>
+      </section>
+
+      <section>
+        <button class="danger" id="exit">Emergency exit</button>
+        <p class="muted" id="exit-count" style="margin: 8px 0 0"></p>
+      </section>
+    </main>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

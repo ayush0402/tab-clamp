@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "tab-clamp",
+  "version": "0.1.0",
+  "description": "Clamp yourself into a few tabs for a set time. No hopping away, no closing, no browsing off.",
+  "permissions": ["tabs", "storage", "alarms", "webNavigation", "scripting"],
+  "host_permissions": ["<all_urls>"],
+  "action": {
+    "default_title": "tab-clamp",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  }
+}

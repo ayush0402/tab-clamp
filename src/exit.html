@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Emergency exit — tab-clamp</title>
+    <link rel="stylesheet" href="ui.css" />
+  </head>
+  <body>
+    <header>
+      <div class="dot" style="background: var(--danger)"></div>
+      <h1>Emergency exit</h1>
+      <span class="muted" id="remaining" style="margin-left: auto"></span>
+    </header>
+
+    <main>
+      <section>
+        <p class="muted" id="summary"></p>
+        <p class="ack">
+          To end the session early, write a few lines about what pulled you
+          away and why it can't wait — and include this sentence:
+          <br /><br />
+          <strong id="ack-phrase"></strong>
+        </p>
+      </section>
+
+      <section>
+        <label class="field" for="reason">Your acknowledgement</label>
+        <textarea
+          id="reason"
+          placeholder="I'm leaving because…"
+          spellcheck="true"
+        ></textarea>
+        <ul class="checklist">
+          <li id="chk-phrase">Contains the acknowledgement sentence</li>
+          <li id="chk-words">Explains why, in your own words</li>
+          <li id="chk-wait">Reflection pause</li>
+        </ul>
+      </section>
+
+      <section>
+        <p class="error" id="error"></p>
+        <button class="danger" id="unlock" disabled>Unlock everything</button>
+        <button id="stay" style="width: 100%; margin-top: 8px">
+          Never mind — keep me clamped
+        </button>
+      </section>
+    </main>
+
+    <script src="exit.js"></script>
+  </body>
+</html>

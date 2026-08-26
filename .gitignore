@@ -1,0 +1,28 @@
+# Build output — regenerate with `npm run build`
+dist/
+*.zip
+*.xpi
+*.crx
+
+# Store signing keys. A leaked .pem lets someone else ship an update that
+# your users auto-install, so this must never be committed.
+*.pem
+key.pem
+web-ext-artifacts/
+.env
+.env.*
+!.env.example
+
+# Dependencies (none today, but contributors may add tooling)
+node_modules/
+npm-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Editors and OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+PUBLISHING.md
