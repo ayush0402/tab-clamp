@@ -1,6 +1,6 @@
 {
   "name": "tab-clamp",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "description": "Browser extension that clamps you into a chosen set of tabs for a set time.",
   "license": "MIT",

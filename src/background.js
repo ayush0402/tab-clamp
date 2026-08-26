@@ -118,7 +118,13 @@ function isAllowed(entry, url) {
 }
 
 function findEntry(sess, tabId) {
+  if (tabId == null) return null;
   return sess?.tabs.find((t) => t.tabId === tabId) ?? null;
+}
+
+/** Entries with a tab actually open — orphans are awaiting re-homing. */
+function liveTabs(sess) {
+  return sess?.tabs.filter((t) => t.tabId != null) ?? [];
 }
 
 /* ------------------------------------------------------------- injection */
@@ -261,8 +267,9 @@ B.tabs.onActivated.addListener((info) =>
     if (findEntry(sess, info.tabId)) return;
     if (internalTabIds.has(info.tabId)) return;
 
-    const home =
-      sess.tabs.find((e) => e.windowId === info.windowId) ?? sess.tabs[0];
+    const live = liveTabs(sess);
+    if (!live.length) return;
+    const home = live.find((e) => e.windowId === info.windowId) ?? live[0];
     try {
       await withInternal(() => B.tabs.update(home.tabId, { active: true }));
       await toast(home.tabId, 'Clamped — you stay on this tab.');
@@ -281,11 +288,13 @@ B.windows.onFocusChanged.addListener((windowId) =>
     const settings = await getSettings();
     if (!settings.keepFocus) return;
     if (windowId === sess.exitWindowId) return;
-    if (sess.tabs.some((e) => e.windowId === windowId)) return;
+    const live = liveTabs(sess);
+    if (!live.length) return;
+    if (live.some((e) => e.windowId === windowId)) return;
 
     try {
       await withInternal(() =>
-        B.windows.update(sess.tabs[0].windowId, { focused: true }),
+        B.windows.update(live[0].windowId, { focused: true }),
       );
     } catch {
       // Window is gone; the tab-level handlers will re-home it.
@@ -309,9 +318,9 @@ B.tabs.onCreated.addListener((tab) =>
 
     try {
       await withInternal(() => B.tabs.remove(tab.id));
-      const home =
-        sess.tabs.find((e) => e.windowId === tab.windowId) ?? sess.tabs[0];
-      await toast(home.tabId, 'New tabs are blocked while clamped.');
+      const live = liveTabs(sess);
+      const home = live.find((e) => e.windowId === tab.windowId) ?? live[0];
+      if (home) await toast(home.tabId, 'New tabs are blocked while clamped.');
     } catch {
       // Race with the user closing it themselves.
     }
@@ -334,12 +343,25 @@ B.tabs.onRemoved.addListener((tabId, removeInfo) =>
     if (!entry) return;
 
     const settings = await getSettings();
-    if (!settings.reopenClosedTabs) {
-      const remaining = sess.tabs.filter((e) => e.tabId !== tabId);
-      if (!remaining.length) return endSession('all-tabs-closed');
-      await saveSession({ ...sess, tabs: remaining });
-      return;
-    }
+
+    /* Nothing here may end the session. Quitting the browser fires onRemoved
+     * for every clamped tab, so any teardown decision made here would wipe the
+     * stored session on the way out and leave nothing to restore. Entries are
+     * only ever orphaned (tabId: null); the tick alarm re-homes them and is the
+     * sole place allowed to end a session, because alarms don't fire during
+     * shutdown — so that call is always made by a browser that's still alive. */
+    const orphan = async () => {
+      const fresh = await loadSession();
+      if (!fresh) return;
+      await saveSession({
+        ...fresh,
+        tabs: fresh.tabs.map((e) =>
+          e.tabId === tabId ? { ...e, tabId: null } : e,
+        ),
+      });
+    };
+
+    if (!settings.reopenClosedTabs) return orphan();
 
     try {
       const reopened = await withInternal(async () => {
@@ -368,13 +390,9 @@ B.tabs.onRemoved.addListener((tabId, removeInfo) =>
       });
       await toast(reopened.tabId, 'Clamped — this tab stays open.');
     } catch {
-      // Could not reopen (window torn down mid-flight); drop the entry so the
-      // session doesn't keep chasing a tab that cannot come back.
-      const fresh = await loadSession();
-      if (!fresh) return;
-      const remaining = fresh.tabs.filter((e) => e.tabId !== tabId);
-      if (!remaining.length) return endSession('all-tabs-closed');
-      await saveSession({ ...fresh, tabs: remaining });
+      // Browser shutting down, or the window went away mid-flight. Leave it
+      // orphaned for the tick alarm — or the next browser start — to re-home.
+      await orphan();
     }
   }),
 );
@@ -432,12 +450,63 @@ B.webNavigation.onCommitted.addListener(async (details) => {
   if (findEntry(sess, details.tabId)) await injectInto(details.tabId);
 });
 
+/* Reopens clamped tabs that were closed and couldn't be rebuilt in the moment.
+ * Driven by the tick alarm, which only fires while the browser is running —
+ * which is what makes this the safe place to decide a session is over. */
+async function rehomeOrphans() {
+  const sess = await loadSession();
+  if (!sess?.active || paused()) return;
+
+  const orphans = sess.tabs.filter((e) => e.tabId == null);
+  if (!orphans.length) return;
+
+  const settings = await getSettings();
+  if (!settings.reopenClosedTabs) {
+    // Closing tabs is allowed in this mode, so losing all of them genuinely
+    // ends the session.
+    if (orphans.length === sess.tabs.length) await endSession('all-tabs-closed');
+    return;
+  }
+
+  const tabs = [];
+  for (const entry of sess.tabs) {
+    if (entry.tabId != null) {
+      tabs.push(entry);
+      continue;
+    }
+    try {
+      const tab = await withInternal(() =>
+        B.tabs.create({ url: entry.url, active: false }),
+      );
+      internalTabIds.add(tab.id);
+      tabs.push({
+        ...entry,
+        tabId: tab.id,
+        windowId: tab.windowId,
+        index: tab.index,
+      });
+    } catch {
+      tabs.push(entry); // still orphaned; try again next tick
+    }
+  }
+
+  const fresh = await loadSession();
+  if (!fresh?.active) return;
+  await saveSession({ ...fresh, tabs });
+  await Promise.all(
+    tabs.filter((e) => e.tabId != null).map((e) => injectInto(e.tabId)),
+  );
+}
+
 B.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === ALARM_END) await endSession('timer');
   else if (alarm.name === ALARM_TICK) {
     const sess = await loadSession();
     if (sess && Date.now() >= sess.endsAt) await endSession('timer');
-    else await updateBadge();
+    else {
+      await updateBadge();
+      await serial(rehomeOrphans);
+    }
   }
 });
 
@@ -525,7 +594,10 @@ B.windows.onCreated.addListener((win) =>
 
     try {
       await withInternal(() => B.windows.remove(win.id));
-      await toast(sess.tabs[0].tabId, 'Private windows are blocked while clamped.');
+      const home = liveTabs(sess)[0];
+      if (home) {
+        await toast(home.tabId, 'Private windows are blocked while clamped.');
+      }
     } catch {
       // Already gone, or we lack the access needed to close it.
     }
