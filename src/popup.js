@@ -90,10 +90,22 @@ function validate() {
   $('setup-error').textContent = '';
 }
 
-async function renderSetup(settings) {
+/* Incognito access is off by default in both browsers and can only be granted
+ * by hand, so the popup points at the setting rather than failing quietly. */
+function renderIncognitoWarning(allowed) {
+  $('incognito-warning').classList.toggle('hidden', allowed);
+  if (allowed) return;
+  const firefox = navigator.userAgent.includes('Firefox');
+  $('incognito-how').textContent = firefox
+    ? 'Opening a private window escapes the clamp. To close that gap, allow tab-clamp to "Run in Private Windows" in about:addons.'
+    : 'Opening an incognito window escapes the clamp. To close that gap, turn on "Allow in Incognito" for tab-clamp in chrome://extensions.';
+}
+
+async function renderSetup(settings, incognitoAllowed) {
   $('headline').textContent = 'idle';
   $('setup').classList.remove('hidden');
   $('active').classList.add('hidden');
+  renderIncognitoWarning(incognitoAllowed);
 
   const tabs = await B.tabs.query({ currentWindow: true });
   const list = $('tab-list');
@@ -101,6 +113,7 @@ async function renderSetup(settings) {
   choices.clear();
   for (const tab of tabs) {
     if (tab.url?.startsWith(B.runtime.getURL(''))) continue;
+    if (tab.incognito) continue; // never recorded to disk
     list.appendChild(renderTabRow(tab));
   }
   validate();
@@ -223,7 +236,7 @@ async function load() {
   clearInterval(ticker);
   const state = await send({ type: 'tabclamp:get-state' });
   if (state?.session?.active) renderActive(state.session, state.exits);
-  else await renderSetup(state?.settings ?? {});
+  else await renderSetup(state?.settings ?? {}, state?.incognitoAllowed ?? false);
 }
 
 load();

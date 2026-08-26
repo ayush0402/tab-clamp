@@ -1,9 +1,10 @@
 {
   "manifest_version": 3,
   "name": "tab-clamp",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Clamp yourself into a few tabs for a set time. No hopping away, no closing, no browsing off.",
   "permissions": ["tabs", "storage", "alarms", "webNavigation", "scripting"],
+  "incognito": "spanning",
   "host_permissions": ["<all_urls>"],
   "action": {
     "default_title": "tab-clamp",

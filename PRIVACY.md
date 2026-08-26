@@ -33,6 +33,13 @@ You can clamp any tab, and the extension cannot know in advance which sites
 those will be. Access is used only for the tabs you explicitly select when you
 start a session, and only for the duration of that session.
 
+## Private browsing
+
+tab-clamp never clamps a private/incognito tab and never records a private URL.
+If you grant it access to private windows, that access is used for exactly one
+thing: closing private windows opened while a focus session is running. Nothing
+about them is stored.
+
 ## Deleting your data
 
 Uninstalling the extension removes all of it. To clear it while keeping the

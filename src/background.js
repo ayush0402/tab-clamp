@@ -35,7 +35,13 @@ let session;
  * tab/window churn that we caused ourselves, so the handlers don't fight it. */
 let internalOps = 0;
 let unlocking = false;
+let restoring = false;
 const internalTabIds = new Set();
+
+/** Enforcement is off while we tear a session down or rebuild one. */
+function paused() {
+  return unlocking || restoring;
+}
 
 async function loadSession() {
   if (session === undefined) {
@@ -154,6 +160,9 @@ async function startSession({ tabs, minutes }) {
     } catch {
       continue;
     }
+    // Never clamp a private tab: the session is written to disk, and an
+    // incognito URL must not outlive its window.
+    if (tab.incognito) continue;
     entries.push({
       tabId: tab.id,
       windowId: tab.windowId,
@@ -246,7 +255,7 @@ async function updateBadge() {
 B.tabs.onActivated.addListener((info) =>
   serial(async () => {
     const sess = await loadSession();
-    if (!sess || unlocking) return;
+    if (!sess || paused()) return;
     const settings = await getSettings();
     if (!settings.keepFocus) return;
     if (findEntry(sess, info.tabId)) return;
@@ -267,7 +276,7 @@ B.tabs.onActivated.addListener((info) =>
 B.windows.onFocusChanged.addListener((windowId) =>
   serial(async () => {
     const sess = await loadSession();
-    if (!sess || unlocking) return;
+    if (!sess || paused()) return;
     if (windowId === B.windows.WINDOW_ID_NONE) return;
     const settings = await getSettings();
     if (!settings.keepFocus) return;
@@ -288,7 +297,7 @@ B.windows.onFocusChanged.addListener((windowId) =>
 B.tabs.onCreated.addListener((tab) =>
   serial(async () => {
     const sess = await loadSession();
-    if (!sess || unlocking) return;
+    if (!sess || paused()) return;
     if (internalOps > 0) {
       internalTabIds.add(tab.id);
       return;
@@ -314,7 +323,7 @@ B.tabs.onRemoved.addListener((tabId, removeInfo) =>
   serial(async () => {
     const sess = await loadSession();
     internalTabIds.delete(tabId);
-    if (!sess || unlocking) return;
+    if (!sess || paused()) return;
 
     if (tabId === sess.exitTabId) {
       await saveSession({ ...sess, exitTabId: null, exitWindowId: null });
@@ -376,7 +385,7 @@ function guardNavigation(details) {
   if (details.frameId !== 0) return;
   return serial(async () => {
     const sess = await loadSession();
-    if (!sess || unlocking) return;
+    if (!sess || paused()) return;
     const entry = findEntry(sess, details.tabId);
     if (!entry || isAllowed(entry, details.url)) return;
 
@@ -402,7 +411,7 @@ B.webNavigation.onHistoryStateUpdated.addListener((details) => {
   if (details.frameId !== 0) return;
   return serial(async () => {
     const sess = await loadSession();
-    if (!sess || unlocking) return;
+    if (!sess || paused()) return;
     const entry = findEntry(sess, details.tabId);
     if (!entry || isAllowed(entry, details.url)) return;
 
@@ -432,12 +441,96 @@ B.alarms.onAlarm.addListener(async (alarm) => {
   }
 });
 
-B.runtime.onStartup.addListener(async () => {
-  // Tab ids do not survive a browser restart, so an old session is unusable.
+/* Quitting the browser used to be a free escape: the session was dropped on the
+ * way back up. Tab ids don't survive a restart, but the stored URLs do, so the
+ * clamp is rebuilt from those instead. A session whose timer ran out while the
+ * browser was closed just ends, which is what keeps this from following you
+ * into the next morning. */
+async function restoreSession() {
   session = undefined;
   const sess = await loadSession();
-  if (sess) await endSession('browser-restart');
-});
+  if (!sess?.active) return;
+
+  if (Date.now() >= sess.endsAt) {
+    await saveSession(null);
+    await updateBadge();
+    return;
+  }
+
+  restoring = true;
+  try {
+    // Let the browser finish restoring its own tabs first, so we adopt them
+    // rather than opening a second copy of everything.
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+
+    const open = await B.tabs.query({});
+    const claimed = new Set();
+    const tabs = [];
+
+    for (const entry of sess.tabs) {
+      // Match on the anchor domain, not the exact URL — a restored tab may
+      // have come back on a different page of the same site, and the
+      // navigation guard will pull it back into policy once it's clamped.
+      const match = open.find(
+        (t) =>
+          !claimed.has(t.id) &&
+          !t.incognito &&
+          baseHost(t.url ?? '') === entry.host,
+      );
+
+      if (match) {
+        claimed.add(match.id);
+        tabs.push({
+          ...entry,
+          tabId: match.id,
+          windowId: match.windowId,
+          index: match.index,
+        });
+      } else {
+        const created = await withInternal(() =>
+          B.tabs.create({ url: entry.url, active: false }),
+        );
+        tabs.push({
+          ...entry,
+          tabId: created.id,
+          windowId: created.windowId,
+          index: created.index,
+        });
+      }
+    }
+
+    await saveSession({ ...sess, tabs, exitWindowId: null, exitTabId: null });
+    await B.alarms.create(ALARM_END, { when: sess.endsAt });
+    await B.alarms.create(ALARM_TICK, { periodInMinutes: 0.5 });
+    await Promise.all(tabs.map((e) => injectInto(e.tabId)));
+    await B.tabs.update(tabs[0].tabId, { active: true });
+    await updateBadge();
+  } finally {
+    restoring = false;
+  }
+}
+
+B.runtime.onStartup.addListener(restoreSession);
+
+/* Incognito is a one-keystroke escape, so close the window outright. This only
+ * fires when the user has granted incognito access; without it the browser
+ * hides private windows from extensions entirely and there is nothing to hook.
+ * Clamped tabs are never allowed to be incognito, so no private URL is ever
+ * written to storage. */
+B.windows.onCreated.addListener((win) =>
+  serial(async () => {
+    const sess = await loadSession();
+    if (!sess || paused() || internalOps > 0) return;
+    if (!win.incognito) return;
+
+    try {
+      await withInternal(() => B.windows.remove(win.id));
+      await toast(sess.tabs[0].tabId, 'Private windows are blocked while clamped.');
+    } catch {
+      // Already gone, or we lack the access needed to close it.
+    }
+  }),
+);
 
 /* --------------------------------------------------------------- messages */
 
@@ -478,16 +571,20 @@ async function openExitWindow() {
 async function handleMessage(msg, sender) {
   switch (msg?.type) {
     case 'tabclamp:get-state': {
-      const [sess, settings, stored] = await Promise.all([
+      const [sess, settings, stored, incognitoAllowed] = await Promise.all([
         loadSession(),
         getSettings(),
         B.storage.local.get(EXITS_KEY),
+        // False by default in both browsers, and the user has to grant it by
+        // hand — so the popup nags rather than silently leaving the hole open.
+        B.extension?.isAllowedIncognitoAccess?.().catch(() => false) ?? false,
       ]);
       return {
         session: sess,
         settings,
         exits: stored[EXITS_KEY] ?? [],
         ackPhrase: ACK_PHRASE,
+        incognitoAllowed,
       };
     }
 

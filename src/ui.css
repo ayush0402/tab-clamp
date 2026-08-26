@@ -212,6 +212,24 @@ textarea:focus {
 
 .error { color: var(--danger); font-size: 12px; min-height: 16px; }
 
+.notice {
+  padding: 9px 11px;
+  border: 1px solid #4a3a1a;
+  border-radius: 8px;
+  background: #1e1810;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #e8d9b8;
+}
+
+.notice strong { display: block; color: #f5c86b; }
+.notice code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: #2a2317;
+  font-size: 11px;
+}
+
 .checklist { display: grid; gap: 6px; margin: 10px 0 0; padding: 0; list-style: none; }
 
 .checklist li {

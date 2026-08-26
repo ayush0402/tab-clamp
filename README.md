@@ -110,9 +110,16 @@ never reads page content.
 Not yet - end the session or wait for the timer. It's the most requested thing
 on the roadmap.
 
-**My browser restarted and the session was gone.**
-That's intentional. Tab identity doesn't survive a restart, so a resumed session
-would clamp the wrong tabs. A restart ends the session cleanly instead.
+**Can I escape by quitting the browser?**
+Only until you open it again. The session is rebuilt from the URLs you clamped,
+with whatever time was left still on the clock. If the timer ran out while the
+browser was closed, nothing happens — so this can't follow you into tomorrow.
+
+**What about a private/incognito window?**
+Grant tab-clamp access to private windows and it closes them on sight during a
+session. Browsers disable extensions in private windows by default, so until
+you turn it on this is a real gap — the popup will tell you, with the setting to
+flip. tab-clamp never clamps a private tab or records its URL.
 
 **I closed a clamped tab and it came back, but my video restarted.**
 The tab is recreated, not resurrected - scroll position and video position are
