@@ -23,7 +23,14 @@ const TARGETS = {
     ...manifest,
     background: { scripts: ['background.js'] },
     browser_specific_settings: {
-      gecko: { id: 'tab-clamp@ayushk', strict_min_version: '115.0' },
+      gecko: {
+        id: 'tab-clamp@ayushk',
+        strict_min_version: '115.0',
+        // Required by AMO since 2025-11-03. Nothing here is transmitted
+        // anywhere, so this is "none" — which must be the only entry, with no
+        // `optional` array beside it. Firefox 139 and older ignore the key.
+        data_collection_permissions: { required: ['none'] },
+      },
     },
   }),
 };
